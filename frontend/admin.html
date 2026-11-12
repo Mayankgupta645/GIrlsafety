@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SOS Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+</head>
+<body>
+
+<div id="map" style="height:100vh;"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map("map").setView([13.03, 80.23], 13);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+  async function loadSOS() {
+    const res = await fetch("http://localhost:5000/api/sos");
+    const data = await res.json();
+
+    data.forEach(s => {
+      L.circleMarker([s.latitude, s.longitude], {
+        radius: 8,
+        color: "red",
+        fillOpacity: 0.8
+      }).addTo(map).bindPopup(
+        `SOS<br>Source: ${s.source}<br>${s.created_at}`
+      );
+    });
+  }
+
+  loadSOS();
+</script>
+
+</body>
+</html>

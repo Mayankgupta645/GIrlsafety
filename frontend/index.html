@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SafeRoute</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;background:#f8f9fa}
+
+/* ════ MAP ════ */
+#map{position:fixed;inset:0;z-index:1}
+
+/* ════ SIDEBAR ════ */
+#sidebar{
+  position:fixed;top:0;left:0;
+  width:340px;height:100vh;
+  background:#fff;
+  z-index:1000;
+  display:flex;flex-direction:column;
+  box-shadow:4px 0 24px rgba(0,0,0,.15);
+  overflow:hidden;
+}
+
+/* ── header ── */
+.sb-head{
+  padding:18px 16px 14px;
+  background:#fff;
+  border-bottom:1px solid #f0f0f0;
+  flex-shrink:0;
+}
+.sb-logo{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.sb-logo-icon{
+  width:36px;height:36px;border-radius:10px;
+  background:linear-gradient(135deg,#1a73e8,#0d47a1);
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;flex-shrink:0;
+}
+.sb-logo h1{font-size:18px;font-weight:700;color:#202124;letter-spacing:-.3px}
+.sb-logo span{font-size:11px;color:#5f6368;font-weight:400;display:block;margin-top:1px}
+
+/* ── search inputs with connector ── */
+.od-wrap{display:flex;gap:10px;align-items:stretch}
+.od-line{
+  display:flex;flex-direction:column;align-items:center;
+  padding:11px 0;width:16px;flex-shrink:0;
+}
+.od-dot-a{width:11px;height:11px;border-radius:50%;background:#1a73e8;flex-shrink:0;box-shadow:0 0 0 2px #e8f0fe}
+.od-vline{flex:1;width:2px;background:linear-gradient(to bottom,#1a73e8,#34a853);margin:4px 0;min-height:10px}
+.od-dot-b{width:11px;height:11px;border-radius:50%;background:#34a853;flex-shrink:0;box-shadow:0 0 0 2px #e6f4ea}
+.od-fields{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+
+.search-field{
+  display:flex;align-items:center;gap:8px;
+  background:#f8f9fa;border:1.5px solid #e8eaed;
+  border-radius:10px;padding:10px 12px;
+  transition:all .2s;
+}
+.search-field:focus-within{border-color:#1a73e8;background:#fff;box-shadow:0 0 0 3px rgba(26,115,232,.1)}
+.search-field input{
+  flex:1;border:none;outline:none;background:transparent;
+  font-size:13.5px;color:#202124;font-family:inherit;min-width:0;
+}
+.search-field input::placeholder{color:#9aa0a6}
+.search-field input[readonly]{color:#5f6368;cursor:default}
+.sf-icon{font-size:14px;flex-shrink:0;color:#5f6368}
+.sf-clear{
+  width:18px;height:18px;border-radius:50%;background:#dadce0;
+  border:none;cursor:pointer;color:#5f6368;font-size:10px;
+  display:none;align-items:center;justify-content:center;
+  flex-shrink:0;transition:background .15s;
+}
+.sf-clear.on{display:flex}
+.sf-clear:hover{background:#bdc1c6}
+
+/* autocomplete */
+.ac-wrap{position:relative}
+.ac-drop{
+  display:none;position:absolute;
+  top:calc(100% + 4px);left:0;right:0;
+  background:#fff;border-radius:12px;
+  box-shadow:0 4px 20px rgba(0,0,0,.18);
+  border:1px solid #e8eaed;z-index:5000;overflow:hidden;
+}
+.ac-drop.open{display:block}
+.ac-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;cursor:pointer;
+  border-bottom:1px solid #f8f9fa;transition:background .1s;
+}
+.ac-item:last-child{border-bottom:none}
+.ac-item:hover{background:#f8f9fa}
+.ac-ico{
+  width:30px;height:30px;border-radius:50%;
+  background:#f1f3f4;display:flex;align-items:center;
+  justify-content:center;font-size:14px;flex-shrink:0;
+}
+.ac-txt{flex:1;min-width:0}
+.ac-main{font-size:13px;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.ac-sub{font-size:11px;color:#70757a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.ac-none{padding:12px 14px;font-size:12px;color:#70757a;text-align:center}
+
+/* ── scrollable body ── */
+.sb-body{flex:1;overflow-y:auto;padding:14px 14px 20px}
+.sb-body::-webkit-scrollbar{width:3px}
+.sb-body::-webkit-scrollbar-thumb{background:#e0e0e0;border-radius:3px}
+
+/* ── section headings ── */
+.sec-label{font-size:11px;font-weight:600;color:#9aa0a6;letter-spacing:.6px;text-transform:uppercase;margin:14px 0 8px}
+
+/* ── buttons ── */
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  width:100%;padding:12px;border:none;border-radius:10px;
+  font-size:13.5px;font-weight:600;cursor:pointer;
+  font-family:inherit;transition:all .18s;
+}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:linear-gradient(135deg,#1a73e8,#1557b0);color:#fff;box-shadow:0 3px 12px rgba(26,115,232,.3)}
+.btn-green  {background:linear-gradient(135deg,#34a853,#1e8e3e);color:#fff;box-shadow:0 3px 12px rgba(52,168,83,.3)}
+.btn-red    {background:linear-gradient(135deg,#ea4335,#c62828);color:#fff;box-shadow:0 3px 12px rgba(234,67,53,.3)}
+.btn-amber  {background:linear-gradient(135deg,#fbbc04,#f9a825);color:#202124;box-shadow:0 3px 12px rgba(251,188,4,.25)}
+.btn-gray   {background:linear-gradient(135deg,#9aa0a6,#5f6368);color:#fff}
+.btn-outline{background:#fff;border:1.5px solid #e8eaed;color:#202124}
+.btn-outline:hover{border-color:#1a73e8;color:#1a73e8;background:#f8fbff}
+
+.btn-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
+.btn-row .btn{font-size:12px;padding:10px 4px}
+
+.find-row{display:grid;grid-template-columns:2fr 1fr;gap:7px;margin-top:2px}
+
+/* ── risk pill ── */
+#riskBox{
+  margin-top:10px;padding:10px 14px;
+  border-radius:10px;font-size:13px;font-weight:600;
+  text-align:center;transition:all .3s;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.risk-safe  {background:#e6f4ea;color:#1e8e3e}
+.risk-medium{background:#fef7e0;color:#b45309}
+.risk-high  {background:#fce8e6;color:#c62828}
+
+/* ── voice status ── */
+#voiceStatus{
+  margin-top:8px;padding:9px 12px;background:#f8f9fa;
+  border-radius:9px;font-size:11.5px;text-align:center;
+  color:#5f6368;transition:all .3s;border:1px solid #f0f0f0;
+}
+
+/* ════ ROUTE CARDS ════ */
+#routeSection{display:none;margin-top:2px}
+.routes-header{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:10px;
+}
+.routes-header-left{display:flex;align-items:center;gap:7px}
+.routes-header-left h3{font-size:13.5px;font-weight:700;color:#202124}
+.route-count{
+  background:#e8f0fe;color:#1a73e8;font-size:11px;
+  font-weight:700;padding:2px 7px;border-radius:20px;
+}
+.routes-clear-btn{
+  background:none;border:none;font-size:12px;color:#ea4335;
+  cursor:pointer;padding:4px 8px;border-radius:6px;font-weight:500;
+}
+.routes-clear-btn:hover{background:#fce8e6}
+
+/* ── legend ── */
+.route-legend{
+  display:flex;gap:14px;margin-bottom:10px;
+  padding:8px 10px;background:#f8f9fa;border-radius:8px;
+}
+.leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:#5f6368;font-weight:500}
+.leg-line{width:22px;height:3px;border-radius:4px}
+
+/* ── single route card ── */
+.route-card{
+  background:#fff;border-radius:13px;margin-bottom:8px;
+  box-shadow:0 1px 6px rgba(0,0,0,.09);
+  border:1.5px solid transparent;
+  overflow:hidden;cursor:pointer;
+  opacity:0;transform:translateY(14px);
+  transition:opacity .35s ease,transform .35s ease,box-shadow .18s,border-color .18s;
+}
+.route-card.in{opacity:1;transform:translateY(0)}
+.route-card:hover{box-shadow:0 4px 18px rgba(0,0,0,.14)}
+.route-card.selected{border-color:var(--rc-color,#1a73e8);box-shadow:0 4px 18px rgba(0,0,0,.14)}
+
+.rc-header{
+  display:flex;align-items:center;gap:10px;
+  padding:11px 12px 8px;
+}
+.rc-icon{
+  width:34px;height:34px;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;flex-shrink:0;
+}
+.rc-info{flex:1;min-width:0}
+.rc-name{font-size:13.5px;font-weight:700;color:#202124;display:flex;align-items:center;gap:6px}
+.rc-badge{
+  font-size:10px;font-weight:700;padding:2px 7px;
+  border-radius:20px;color:#fff;white-space:nowrap;
+}
+.rc-meta{font-size:11.5px;color:#5f6368;margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
+.rc-go{
+  flex-shrink:0;padding:7px 14px;border-radius:8px;
+  border:1.5px solid currentColor;background:transparent;
+  font-size:12px;font-weight:700;cursor:pointer;
+  font-family:inherit;transition:all .15s;
+  white-space:nowrap;
+}
+.rc-go:hover{color:#fff!important}
+
+/* risk bar inside card */
+.rc-bar-wrap{padding:0 12px 11px}
+.rc-bar-labels{display:flex;justify-content:space-between;font-size:10px;color:#9aa0a6;margin-bottom:4px}
+.rc-bar-bg{height:5px;background:#f1f3f4;border-radius:10px;overflow:hidden}
+.rc-bar-fill{height:100%;border-radius:10px;width:0;transition:width .7s ease}
+
+/* ── risk breakdown chips ── */
+.rc-chips{display:flex;gap:5px;padding:0 12px 11px;flex-wrap:wrap}
+.chip{
+  display:flex;align-items:center;gap:3px;
+  padding:3px 8px;border-radius:20px;
+  font-size:10.5px;font-weight:600;
+}
+
+/* ════ NAV BAR (bottom) ════ */
+#navBar{
+  position:fixed;bottom:0;left:340px;right:0;
+  background:linear-gradient(to top,#0d1117ee,#0d111700);
+  padding:16px 20px;z-index:999;display:none;
+  backdrop-filter:blur(4px);
+}
+#navInner{
+  background:rgba(13,17,23,.92);border-radius:14px;
+  padding:14px 16px;max-width:700px;
+  box-shadow:0 -4px 24px rgba(0,0,0,.4);
+}
+#navTitle{font-size:14px;font-weight:700;color:#34a853;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+#navSteps{display:flex;flex-direction:column;gap:5px;max-height:28vh;overflow-y:auto}
+.nav-step{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.06);
+  font-size:12.5px;color:#e0e0e0;border-left:3px solid transparent;
+}
+.nav-step.active{background:rgba(52,168,83,.2);border-left-color:#34a853;color:#fff}
+.nav-step-num{font-size:11px;color:#9aa0a6;width:18px;text-align:right;flex-shrink:0}
+
+/* ════ ONBOARDING ════ */
+#obOverlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.88);
+  z-index:10000;display:none;
+}
+#obCard{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:#fff;border-radius:20px;padding:36px;
+  width:min(460px,90vw);text-align:center;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);
+}
+#obIcon{font-size:58px;margin-bottom:14px;display:block}
+#obTitle{font-size:22px;font-weight:700;color:#202124;margin-bottom:10px}
+#obText{font-size:14.5px;color:#5f6368;line-height:1.65;margin-bottom:24px}
+.ob-btn{
+  padding:12px 28px;margin:6px;border:none;border-radius:24px;
+  font-size:14px;font-weight:700;cursor:pointer;
+}
+.ob-primary{background:linear-gradient(135deg,#1a73e8,#1557b0);color:#fff}
+.ob-secondary{background:#fff;color:#1a73e8;border:2px solid #1a73e8}
+#obDots{margin-top:16px;display:flex;justify-content:center;gap:5px}
+.ob-dot{width:7px;height:7px;border-radius:50%;background:#dadce0;transition:all .25s}
+.ob-dot.active{background:#1a73e8;width:18px;border-radius:4px}
+
+#spotlight{
+  position:fixed;border:3px solid #1a73e8;border-radius:50%;pointer-events:none;
+  z-index:9999;display:none;
+  box-shadow:0 0 0 9999px rgba(0,0,0,.82),0 0 24px #1a73e8;
+  transition:all .45s ease;
+}
+
+/* ── loading spinner ── */
+#loadingOverlay{
+  position:fixed;inset:0;z-index:8000;background:rgba(255,255,255,.7);
+  display:none;align-items:center;justify-content:center;
+  backdrop-filter:blur(3px);
+}
+.spinner{
+  width:44px;height:44px;border:4px solid #e8eaed;
+  border-top-color:#1a73e8;border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- ════ SIDEBAR ════ -->
+<div id="sidebar">
+
+  <!-- Header: logo + search -->
+  <div class="sb-head">
+    <div class="sb-logo">
+      <div class="sb-logo-icon">🛡️</div>
+      <div>
+        <h1>SafeRoute</h1>
+        <span>Safety-first navigation</span>
+      </div>
+    </div>
+
+    <!-- Origin / Dest with connector -->
+    <div class="od-wrap">
+      <div class="od-line">
+        <div class="od-dot-a"></div>
+        <div class="od-vline"></div>
+        <div class="od-dot-b"></div>
+      </div>
+      <div class="od-fields">
+        <!-- From -->
+        <div class="search-field">
+          <span class="sf-icon">📍</span>
+          <input id="from" placeholder="Your location" readonly/>
+        </div>
+        <!-- To (with autocomplete) -->
+        <div class="ac-wrap">
+          <div class="search-field" id="toBox">
+            <span class="sf-icon">🔍</span>
+            <input id="to" placeholder="Search destination…" autocomplete="off"/>
+            <button class="sf-clear" id="toClear">✕</button>
+          </div>
+          <div class="ac-drop" id="acDrop"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scrollable body -->
+  <div class="sb-body">
+
+    <!-- Actions -->
+    <div class="find-row">
+      <button class="btn btn-primary" onclick="findRoute()">🗺️ Find Safe Routes</button>
+      <button class="btn btn-red"     onclick="sendSOS()"   id="sosBtn">🚨 SOS</button>
+    </div>
+    <div class="btn-row" style="margin-top:7px">
+      <button class="btn btn-amber" onclick="reportIncident()">📢 Report</button>
+      <button class="btn btn-outline" onclick="restartOnboarding()">ℹ️ Tour</button>
+      <button class="btn btn-gray"  onclick="logout()">🚪 Logout</button>
+    </div>
+
+    <!-- Risk + Voice -->
+    <div id="riskBox" class="risk-safe">🟢 Area Risk: Low</div>
+    <div id="voiceStatus">🎤 Voice SOS initialising…</div>
+
+    <!-- Route cards section -->
+    <div id="routeSection">
+      <div class="routes-header">
+        <div class="routes-header-left">
+          <h3>Routes</h3>
+          <span class="route-count" id="routeCount">0</span>
+        </div>
+        <button class="routes-clear-btn" onclick="clearRoutes()">✕ Clear</button>
+      </div>
+
+      <!-- Colour legend -->
+      <div class="route-legend">
+        <div class="leg-item">
+          <div class="leg-line" style="background:#1a73e8"></div> Shortest
+        </div>
+        <div class="leg-item">
+          <div class="leg-line" style="background:#34a853"></div> Safest
+        </div>
+        <div class="leg-item">
+          <div class="leg-line" style="background:#ea4335;height:3px;border-top:2px dashed #ea4335;background:none;border-radius:0"></div> High Risk
+        </div>
+      </div>
+
+      <div id="routeCards"></div>
+    </div>
+
+  </div><!-- /sb-body -->
+</div><!-- /sidebar -->
+
+<!-- Nav bar -->
+<div id="navBar">
+  <div id="navInner">
+    <div id="navTitle">
+      <span>🧭 Navigation Active</span>
+      <button onclick="stopNavigation()" style="background:#ea4335;color:#fff;border:none;padding:6px 14px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700">■ Stop</button>
+    </div>
+    <div id="navSteps"></div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div id="loadingOverlay"><div class="spinner"></div></div>
+
+<!-- Onboarding -->
+<div id="obOverlay">
+  <div id="obCard">
+    <span id="obIcon"></span>
+    <div id="obTitle"></div>
+    <div id="obText"></div>
+    <div id="obBtns"></div>
+    <div id="obDots"></div>
+  </div>
+</div>
+<div id="spotlight"></div>
+
+<script>
+// ══════════════════════════════════════════════
+// MAP SETUP
+// ══════════════════════════════════════════════
+const map = L.map("map",{zoomControl:false}).setView([17.385,78.487],13);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+  attribution:"© OpenStreetMap"
+}).addTo(map);
+L.control.zoom({position:"bottomright"}).addTo(map);
+
+let userLatLng=null, userMarker=null;
+let routeLayers=[], availableRoutes=[], selectedRouteIdx=-1;
+let navActive=false, navStepIdx=0;
+let sosActive=false, audioCtx=null, sosOscs=[];
+
+// ── GPS ──
+if(navigator.geolocation){
+  navigator.geolocation.watchPosition(p=>{
+    const {latitude:lat,longitude:lon}=p.coords;
+    userLatLng={lat,lon};
+    const ll=[lat,lon];
+    if(!userMarker){
+      const icon=L.divIcon({html:`<div style="width:16px;height:16px;background:#1a73e8;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>`,iconSize:[16,16],iconAnchor:[8,8]});
+      userMarker=L.marker(ll,{icon}).addTo(map).bindPopup("📍 You are here");
+      map.setView(ll,15);
+    } else {
+      userMarker.setLatLng(ll);
+    }
+    document.getElementById("from").value="📍 My Location";
+  },e=>console.log(e.message),{enableHighAccuracy:true});
+}
+
+// ── BACKGROUND LAYERS ──
+async function loadRoads(){
+  try{
+    const g=await(await fetch("http://localhost:5000/api/geojson/roads")).json();
+    L.geoJSON(g,{style:f=>{
+      const r=f.properties.risk_score||0;
+      return{color:r<=3?"#1a73e8":r<=6?"#fbbc04":"#ea4335",weight:r>6?5:3,opacity:.75};
+    }}).addTo(map);
+  }catch{}
+}
+async function loadCrimes(){
+  try{
+    const data=await(await fetch("http://localhost:5000/api/crimes")).json();
+    const pts=[];
+    data.forEach(c=>{
+      try{
+        const g=JSON.parse(c.geom);
+        const [ln,lt]=g.coordinates;
+        pts.push([lt,ln,.9]);
+        L.circleMarker([lt,ln],{radius:5,fillColor:"#ea4335",color:"#ea4335",fillOpacity:.7,weight:0}).addTo(map)
+          .bindTooltip(`⚠️ ${c.type||"Incident"}`);
+      }catch{}
+    });
+    if(pts.length) L.heatLayer(pts,{radius:32,blur:22,gradient:{0:"#fbbc04",.5:"#ea4335",1:"#b71c1c"}}).addTo(map);
+  }catch{}
+}
+loadRoads(); loadCrimes();
+
+// ══════════════════════════════════════════════
+// FIND ROUTE
+// ══════════════════════════════════════════════
+async function findRoute(){
+  if(!userLatLng){alert("GPS not ready yet");return;}
+  const to=document.getElementById("to").value.trim();
+  if(!to){alert("Please enter a destination");return;}
+
+  showLoading(true);
+  clearRoutes(false);
+
+  try{
+    // geocode destination
+    const geo=await(await fetch(`http://localhost:5000/api/geo/geocode?q=${encodeURIComponent(to)}`)).json();
+    if(!geo.lat){alert("Location not found");showLoading(false);return;}
+
+    const data=await(await fetch(
+      `http://localhost:5000/api/routes/route?startLat=${userLatLng.lat}&startLon=${userLatLng.lon}&endLat=${geo.lat}&endLon=${geo.lon}`
+    )).json();
+
+    showLoading(false);
+    if(!data.routes?.length){alert("No routes found");return;}
+
+    availableRoutes=data.routes;
+    drawRoutes(data.routes);
+    renderRouteCards(data.routes);
+
+  }catch(e){
+    showLoading(false);
+    alert("Route error: "+e.message);
+  }
+}
+
+// ── DRAW ROUTES ON MAP ──
+// Route 0 = shortest (blue), Route 1 = safest (green), rest = red dashed
+const ROUTE_STYLES=[
+  {color:"#1a73e8",weight:7,opacity:.92,dashArray:null,label:"Shortest",badge:"SHORTEST",icon:"⚡",bg:"#e8f0fe",barColor:"#1a73e8"},
+  {color:"#34a853",weight:7,opacity:.92,dashArray:null,label:"Safest",  badge:"SAFEST",  icon:"🛡️",bg:"#e6f4ea",barColor:"#34a853"},
+  {color:"#ea4335",weight:5,opacity:.70,dashArray:"10 6",label:"Alt",   badge:"HIGH RISK",icon:"⚠️",bg:"#fce8e6",barColor:"#ea4335"},
+];
+
+function drawRoutes(routes){
+  routes.forEach((route,i)=>{
+    const st=ROUTE_STYLES[i]||{color:"#9aa0a6",weight:4,opacity:.6,dashArray:"8 5",label:"Route",badge:"ROUTE",icon:"🔵",bg:"#f5f5f5",barColor:"#9aa0a6"};
+    const coords=parseCoords(route.geometry);
+    if(!coords.length) return;
+
+    const line=L.polyline(coords,{
+      color:st.color,weight:st.weight,opacity:i===0?st.opacity:.55,
+      dashArray:st.dashArray,lineCap:"round",lineJoin:"round",
+    }).addTo(map);
+
+    line.bindPopup(`
+      <b>${st.icon} ${st.label} Route</b><br>
+      📏 ${(route.distance/1000).toFixed(2)} km &nbsp;·&nbsp;
+      ⏱ ${Math.round(route.duration/60)} min<br>
+      🚨 Risk score: <b style="color:${st.color}">${route.crime_score?.toFixed(2)||"N/A"}</b>
+    `);
+    line.on("click",()=>selectRoute(i));
+    routeLayers.push(line);
+  });
+
+  if(routeLayers.length){
+    map.fitBounds(routeLayers[0].getBounds(),{padding:[60,60],maxZoom:16});
+  }
+}
+
+function parseCoords(geom){
+  if(!geom) return [];
+  if(Array.isArray(geom)) return geom;
+  if(geom.type==="LineString") return geom.coordinates.map(c=>[c[1],c[0]]);
+  if(geom.type==="FeatureCollection") return geom.features.flatMap(f=>f.geometry.coordinates.map(c=>[c[1],c[0]]));
+  return [];
+}
+
+// ══════════════════════════════════════════════
+// ROUTE CARDS
+// ══════════════════════════════════════════════
+function renderRouteCards(routes){
+  const section=document.getElementById("routeSection");
+  const box=document.getElementById("routeCards");
+  box.innerHTML="";
+  section.style.display="block";
+  document.getElementById("routeCount").textContent=routes.length;
+
+  routes.forEach((route,i)=>{
+    const st=ROUTE_STYLES[i]||ROUTE_STYLES[2];
+    const dist=(route.distance/1000).toFixed(1);
+    const mins=Math.round(route.duration/60);
+    const score=parseFloat(route.crime_score||0);
+    const pct=Math.min(score/10*100,100);
+    const riskLabel=score<3?"Low":score<6?"Moderate":"High";
+    const riskColor=score<3?"#34a853":score<6?"#fbbc04":"#ea4335";
+    const riskBg=score<3?"#e6f4ea":score<6?"#fef7e0":"#fce8e6";
+
+    const card=document.createElement("div");
+    card.className="route-card";
+    card.style.setProperty("--rc-color",st.color);
+    card.innerHTML=`
+      <div class="rc-header">
+        <div class="rc-icon" style="background:${st.bg}">${st.icon}</div>
+        <div class="rc-info">
+          <div class="rc-name">
+            Route ${i+1} · ${st.label}
+            <span class="rc-badge" style="background:${st.color}">${st.badge}</span>
+          </div>
+          <div class="rc-meta">
+            <span>📏 ${dist} km</span>
+            <span>⏱ ${mins} min</span>
+          </div>
+        </div>
+        <button class="rc-go" style="color:${st.color};border-color:${st.color}" data-idx="${i}">Go →</button>
+      </div>
+      <div class="rc-chips">
+        <div class="chip" style="background:${riskBg};color:${riskColor}">🚨 Risk: ${riskLabel} (${score.toFixed(1)})</div>
+        <div class="chip" style="background:#f1f3f4;color:#5f6368">📏 ${dist} km</div>
+        <div class="chip" style="background:#f1f3f4;color:#5f6368">⏱ ${mins} min</div>
+      </div>
+      <div class="rc-bar-wrap">
+        <div class="rc-bar-labels">
+          <span>Safety</span>
+          <span>${(100-pct).toFixed(0)}% safe · ${pct.toFixed(0)}% risk</span>
+        </div>
+        <div class="rc-bar-bg">
+          <div class="rc-bar-fill" data-w="${pct}" style="background:${st.barColor}"></div>
+        </div>
+      </div>
+    `;
+
+    card.querySelector(".rc-go").addEventListener("click",e=>{e.stopPropagation();startNavigation(i)});
+    card.addEventListener("click",()=>selectRoute(i));
+    box.appendChild(card);
+
+    // stagger in + animate bar
+    setTimeout(()=>{
+      card.classList.add("in");
+      setTimeout(()=>{card.querySelector(".rc-bar-fill").style.width=pct+"%"},180);
+    },80+i*150);
+  });
+
+  // scroll to cards
+  setTimeout(()=>document.getElementById("sidebar").querySelector(".sb-body").scrollTo({top:9999,behavior:"smooth"}),400);
+}
+
+function selectRoute(idx){
+  selectedRouteIdx=idx;
+  const colors=["#1a73e8","#34a853","#ea4335"];
+  routeLayers.forEach((l,i)=>{
+    l.setStyle(i===idx
+      ? {weight:9,opacity:1,dashArray:null}
+      : {opacity:.2,weight:3}
+    );
+    if(i===idx) l.bringToFront();
+  });
+  // highlight card
+  document.querySelectorAll(".route-card").forEach((c,i)=>{
+    c.classList.toggle("selected",i===idx);
+  });
+  // update risk box
+  const route=availableRoutes[idx];
+  const score=parseFloat(route?.crime_score||0);
+  const rb=document.getElementById("riskBox");
+  rb.textContent=`🚨 Route Risk Score: ${score.toFixed(2)} — ${score<3?"Low ✅":score<6?"Moderate ⚠️":"High ❌"}`;
+  rb.className=score<3?"risk-safe":score<6?"risk-medium":"risk-high";
+}
+
+function clearRoutes(resetUI=true){
+  routeLayers.forEach(l=>map.removeLayer(l));
+  routeLayers=[]; availableRoutes=[]; selectedRouteIdx=-1;
+  if(resetUI){
+    document.getElementById("routeSection").style.display="none";
+    document.getElementById("routeCards").innerHTML="";
+    document.getElementById("riskBox").className="risk-safe";
+    document.getElementById("riskBox").textContent="🟢 Area Risk: Low";
+  }
+}
+
+// ══════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════
+function startNavigation(idx){
+  if(!availableRoutes[idx]) return;
+  selectRoute(idx);
+  navActive=true; navStepIdx=0;
+  const route=availableRoutes[idx];
+  const steps=route.legs?.[0]?.steps||[];
+  renderNavSteps(steps);
+  document.getElementById("navBar").style.display="block";
+  if(steps.length) speak("Navigation started. "+instrFromManeuver(steps[0]?.maneuver));
+}
+
+function renderNavSteps(steps){
+  const el=document.getElementById("navSteps");
+  el.innerHTML="";
+  steps.forEach((s,i)=>{
+    const instr=s.maneuver?.instruction||instrFromManeuver(s.maneuver)||"Continue";
+    const arrow=dirArrow(s.maneuver?.modifier||s.maneuver?.type);
+    const div=document.createElement("div");
+    div.className="nav-step"+(i===navStepIdx?" active":"");
+    div.innerHTML=`<span class="nav-step-num">${i+1}</span><span style="font-size:16px">${arrow}</span><div style="flex:1"><div style="font-weight:600">${instr}</div><div style="font-size:11px;color:#9aa0a6;margin-top:1px">${Math.round(s.distance||0)} m</div></div>`;
+    el.appendChild(div);
+  });
+}
+
+function stopNavigation(){
+  navActive=false; navStepIdx=0;
+  document.getElementById("navBar").style.display="none";
+  speechSynthesis?.cancel();
+  routeLayers.forEach(l=>l.setStyle({opacity:.7}));
+}
+
+function instrFromManeuver(m){
+  if(!m) return "Continue";
+  const t=m.type||"",mod=m.modifier||"";
+  if(t==="depart") return "Head "+mod;
+  if(t==="arrive") return "You have arrived at your destination";
+  if(t==="turn"&&mod==="left")  return "Turn left";
+  if(t==="turn"&&mod==="right") return "Turn right";
+  if(mod.includes("slight left"))  return "Keep left";
+  if(mod.includes("slight right")) return "Keep right";
+  if(mod.includes("uturn")) return "Make a U-turn";
+  return "Continue straight";
+}
+function dirArrow(m){
+  if(!m) return "➡️";
+  if(m.includes("left"))   return "⬅️";
+  if(m.includes("right"))  return "➡️";
+  if(m.includes("straight")||m.includes("depart")) return "⬆️";
+  if(m.includes("uturn"))  return "↩️";
+  return "➡️";
+}
+function speak(t){
+  if(!("speechSynthesis" in window)) return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(t);
+  u.rate=.95;u.pitch=1;u.volume=1;
+  speechSynthesis.speak(u);
+}
+
+// ══════════════════════════════════════════════
+// SOS
+// ══════════════════════════════════════════════
+function startSOSAlarm(){
+  try{
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==="suspended") audioCtx.resume();
+    const gain=audioCtx.createGain(); gain.gain.value=.7; gain.connect(audioCtx.destination);
+    [880,1100,660].forEach(f=>{
+      const o=audioCtx.createOscillator();
+      o.type="square"; o.frequency.value=f; o.connect(gain); o.start();
+      sosOscs.push(o);
+    });
+    let tick=0;
+    const sweepId=setInterval(()=>{
+      if(!sosActive){clearInterval(sweepId);return;}
+      const freqs=[[1400,1700,1000],[900,1100,700],[1600,1900,1200]];
+      tick=(tick+1)%3;
+      sosOscs.forEach((o,j)=>o.frequency.setValueAtTime(freqs[tick][j],audioCtx.currentTime));
+    },120);
+  }catch(e){}
+}
+function stopSOSAlarm(){
+  try{sosOscs.forEach(o=>{o.stop();o.disconnect()});audioCtx?.close();}catch{}
+  sosOscs=[]; audioCtx=null;
+}
+
+async function triggerSOS(source){
+  const btn=document.getElementById("sosBtn");
+  if(sosActive){
+    sosActive=false; stopSOSAlarm();
+    btn.innerHTML="🚨 SOS"; btn.style.background="";
+    return;
+  }
+  sosActive=true; startSOSAlarm();
+  btn.innerHTML="🔇 STOP SOS"; btn.style.background="#b71c1c";
+  try{
+    const payload={phone:"+919997114166",source};
+    if(userMarker){const ll=userMarker.getLatLng();payload.lat=ll.lat;payload.lon=ll.lng;}
+    const r=await fetch("http://localhost:5000/api/sos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    if(r.ok) alert("🚨 Emergency services alerted! Help is on the way.");
+    else     alert("⚠️ SOS alarm active — network error sending alert");
+  }catch{ alert("⚠️ SOS alarm active — check your connection"); }
+}
+function sendSOS(){triggerSOS("Manual");}
+
+// ══════════════════════════════════════════════
+// INCIDENT REPORT
+// ══════════════════════════════════════════════
+async function reportIncident(){
+  const type=prompt("Incident type (theft / assault / harassment / accident):");
+  if(!type) return;
+  if(!userMarker){alert("GPS not available");return;}
+  const{lat,lng}=userMarker.getLatLng();
+  try{
+    await fetch("http://localhost:5000/api/crimes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type,lat,lon:lng})});
+    alert("✅ Incident reported — map updated"); loadCrimes();
+  }catch{alert("Error reporting incident");}
+}
+
+// ══════════════════════════════════════════════
+// AUTOCOMPLETE (Nominatim)
+// ══════════════════════════════════════════════
+(function(){
+  const inp=document.getElementById("to");
+  const drop=document.getElementById("acDrop");
+  const clr=document.getElementById("toClear");
+  let db=null;
+
+  function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  function pinFor(t){return {city:"🏙️",town:"🏙️",village:"🏡",hospital:"🏥",university:"🎓",road:"🛣️",school:"🏫",restaurant:"🍽️",park:"🌳"}[t]||"📍";}
+  function close(){drop.classList.remove("open");drop.innerHTML="";}
+
+  inp.addEventListener("input",()=>{
+    const q=inp.value.trim();
+    clr.classList.toggle("on",q.length>0);
+    clearTimeout(db);
+    if(q.length<3){close();return;}
+    db=setTimeout(async()=>{
+      try{
+        const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`,{headers:{"Accept-Language":"en"}});
+        const data=await res.json();
+        drop.innerHTML="";
+        if(!data.length){drop.innerHTML=`<div class="ac-none">No results for "${esc(q)}"</div>`;drop.classList.add("open");return;}
+        data.forEach(item=>{
+          const parts=item.display_name.split(", ");
+          const el=document.createElement("div");
+          el.className="ac-item";
+          el.innerHTML=`
+            <div class="ac-ico">${pinFor(item.type||item.class)}</div>
+            <div class="ac-txt">
+              <div class="ac-main">${esc(parts[0])}</div>
+              <div class="ac-sub">${esc(parts.slice(1,4).join(", "))}</div>
+            </div>`;
+          el.addEventListener("click",()=>{
+            inp.value=item.display_name; clr.classList.add("on"); close();
+            map.flyTo([parseFloat(item.lat),parseFloat(item.lon)],15,{animate:true,duration:1});
+          });
+          drop.appendChild(el);
+        });
+        drop.classList.add("open");
+      }catch{close();}
+    },280);
+  });
+
+  inp.addEventListener("keydown",e=>{
+    if(e.key==="Escape"){close();inp.blur();}
+    if(e.key==="Enter") findRoute();
+  });
+  clr.addEventListener("click",()=>{inp.value="";clr.classList.remove("on");close();inp.focus();});
+  document.addEventListener("click",e=>{
+    if(!document.getElementById("toBox").contains(e.target)&&!drop.contains(e.target)) close();
+  });
+})();
+
+// ══════════════════════════════════════════════
+// VOICE SOS
+// ══════════════════════════════════════════════
+const SOS_WORDS=["help","help me","save me","emergency","danger"];
+let recognition=null;
+const vs=document.getElementById("voiceStatus");
+function setVS(msg,bg,color){vs.textContent=msg;vs.style.background=bg||"";vs.style.color=color||"";}
+
+function startVoice(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){setVS("❌ Voice not supported","#fce8e6","#c62828");return;}
+  if(navigator.brave?.isBrave){setVS("⚠️ Enable Speech API in Brave settings","#fef7e0","#b45309");return;}
+  const secure=location.protocol==="https:"||["localhost","127.0.0.1"].includes(location.hostname);
+  if(!secure){setVS("❌ HTTPS required for Voice SOS","#fce8e6","#c62828");return;}
+
+  recognition=new SR();
+  recognition.continuous=true; recognition.interimResults=true; recognition.lang="en-US";
+
+  recognition.onstart=()=>setVS('✅ Voice active — say "help" for SOS',"#e6f4ea","#1e8e3e");
+  recognition.onresult=e=>{
+    const t=e.results[e.results.length-1][0].transcript.toLowerCase();
+    setVS(`🎤 "${t}"`,"#e8f0fe","#1a73e8");
+    if(SOS_WORDS.some(w=>t.includes(w))&&!sosActive){
+      setVS("🚨 HELP DETECTED! SOS ACTIVATED!","#fce8e6","#c62828");
+      triggerSOS("Voice");
+    }
+  };
+  recognition.onerror=e=>{
+    if(e.error==="not-allowed") setVS("❌ Microphone blocked","#fce8e6","#c62828");
+    else if(e.error!=="no-speech") setVS(`⚠️ ${e.error}`,"#fef7e0","#b45309");
+  };
+  recognition.onend=()=>{
+    setVS("🔄 Reconnecting…","#f8f9fa","#5f6368");
+    setTimeout(()=>{try{recognition.start();}catch{setTimeout(startVoice,2000);}},600);
+  };
+  try{recognition.start();}catch(e){if(!e.message.includes("already"))setTimeout(startVoice,2000);}
+}
+setTimeout(startVoice,1200);
+
+// ══════════════════════════════════════════════
+// LOADING
+// ══════════════════════════════════════════════
+function showLoading(v){document.getElementById("loadingOverlay").style.display=v?"flex":"none";}
+
+// ══════════════════════════════════════════════
+// ONBOARDING
+// ══════════════════════════════════════════════
+const OB_STEPS=[
+  {icon:"🛡️",title:"Welcome to SafeRoute",text:"Your personal safety navigation app — showing you the safest path, not just the fastest.",spotlight:null},
+  {icon:"🔍",title:"Search your destination",text:"Type any location in the destination box. We'll show you two routes: blue for shortest, green for safest.",spotlight:"#toBox"},
+  {icon:"🗺️",title:"Compare routes",text:"Route cards appear below — each with distance, time, and a colour-coded risk score. High-risk segments show in red on the map.",spotlight:".find-row"},
+  {icon:"🚨",title:"Emergency SOS",text:"One tap triggers an alarm, calls your emergency contact via Twilio, and shares your GPS location.",spotlight:"#sosBtn"},
+  {icon:"🎤",title:'Voice SOS',text:'Say "help" or "emergency" hands-free to instantly trigger SOS.',spotlight:"#voiceStatus"},
+  {icon:"📢",title:"Report Incidents",text:"Seen something suspicious? Report it to update the live crime heatmap for all users.",spotlight:".btn-amber"},
+  {icon:"✅",title:"You're all set!",text:"SafeRoute is watching. Stay aware, stay safe.",spotlight:null},
+];
+let obStep=0;
+
+function startOnboarding(){
+  if(localStorage.getItem("sr_v2_done")) return;
+  obStep=0;
+  document.getElementById("obOverlay").style.display="block";
+  renderObStep(0);
+}
+function renderObStep(i){
+  if(i>=OB_STEPS.length){finishOb();return;}
+  obStep=i;
+  const s=OB_STEPS[i];
+  document.getElementById("obIcon").textContent=s.icon;
+  document.getElementById("obTitle").textContent=s.title;
+  document.getElementById("obText").textContent=s.text;
+  // dots
+  const dots=document.getElementById("obDots");
+  dots.innerHTML=OB_STEPS.map((_,j)=>`<div class="ob-dot${j===i?" active":""}"></div>`).join("");
+  // buttons
+  const last=i===OB_STEPS.length-1, first=i===0;
+  document.getElementById("obBtns").innerHTML=
+    `${!first?`<button class="ob-btn ob-secondary" onclick="renderObStep(${i-1})">← Back</button>`:""}<button class="ob-btn ob-primary" onclick="renderObStep(${i+1})">${last?"Let's go! 🚀":"Next →"}</button>${first?`<br><a href="#" onclick="finishOb();return false;" style="color:#9aa0a6;font-size:12px;display:inline-block;margin-top:12px">Skip tour</a>`:""}`;
+  // spotlight
+  const sl=document.getElementById("spotlight");
+  if(s.spotlight){
+    const el=document.querySelector(s.spotlight);
+    if(el){
+      const r=el.getBoundingClientRect(), sz=Math.max(r.width,r.height)+40;
+      sl.style.cssText=`display:block;width:${sz}px;height:${sz}px;left:${r.left+r.width/2-sz/2}px;top:${r.top+r.height/2-sz/2}px;border-radius:${sz/2}px`;
+    }
+  } else { sl.style.display="none"; }
+}
+function finishOb(){
+  document.getElementById("obOverlay").style.display="none";
+  document.getElementById("spotlight").style.display="none";
+  localStorage.setItem("sr_v2_done","1");
+  speak("Welcome to SafeRoute. Your safety companion is active.");
+}
+function restartOnboarding(){localStorage.removeItem("sr_v2_done");startOnboarding();}
+setTimeout(startOnboarding,1800);
+
+// ══════════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════════
+function checkAuth(){
+  const u=localStorage.getItem("saferoute_user")||sessionStorage.getItem("saferoute_user");
+  if(!u){location.href="login.html";return;}
+  try{const d=JSON.parse(u);if(!d.loggedIn)location.href="login.html";}
+  catch{location.href="login.html";}
+}
+function logout(){
+  if(!confirm("Logout?")) return;
+  ["saferoute_user","saferoute_onboarding_completed"].forEach(k=>{
+    localStorage.removeItem(k);sessionStorage.removeItem(k);
+  });
+  speak("Goodbye! Stay safe.");
+  setTimeout(()=>location.href="login.html",900);
+}
+checkAuth();
+</script>
+</body>
+</html>
