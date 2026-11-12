@@ -183,6 +183,19 @@ body.dark .ob-secondary{background:#292e38}
 body.dark .leaflet-tile-pane{
   filter:invert(100%) hue-rotate(180deg) brightness(88%) contrast(88%);
 }
+.crime-skull-marker{
+  background:transparent;
+  border:0;
+  text-align:center;
+}
+.crime-skull-marker span{
+  color:#e53935;
+  font-family:Arial,sans-serif;
+  font-size:26px;
+  font-weight:700;
+  line-height:30px;
+  text-shadow:0 1px 2px #fff,1px 0 2px #fff,-1px 0 2px #fff;
+}
 .locate-control button{
   width:40px;height:40px;border:0;border-radius:4px;background:#fff;
   color:#202124;box-shadow:0 1px 5px rgba(0,0,0,.45);
@@ -429,13 +442,13 @@ body.dark .locate-control button:hover{background:#383f4b}
       <!-- Colour legend -->
       <div class="route-legend">
         <div class="leg-item">
-          <div class="leg-line" style="background:#1a73e8"></div> Shortest
+          <div class="leg-line" style="background:#1a73e8"></div> Fastest
         </div>
         <div class="leg-item">
           <div class="leg-line" style="background:#34a853"></div> Safest
         </div>
         <div class="leg-item">
-          <div class="leg-line" style="background:#ea4335;height:3px;border-top:2px dashed #ea4335;background:none;border-radius:0"></div> High Risk
+          <div class="leg-line" style="background:#ea4335"></div> Alternative
         </div>
       </div>
 
@@ -624,9 +637,13 @@ async function loadCrimes(){
         const g=JSON.parse(c.geom);
         const [ln,lt]=g.coordinates;
         pts.push([lt,ln,.9]);
-        const marker=L.circleMarker([lt,ln],{
-          radius:4,fillColor:"#e53935",color:"#b71c1c",fillOpacity:.9,weight:1
+        const icon=L.divIcon({
+          className:"crime-skull-marker",
+          html:"<span aria-hidden=\"true\">☠</span>",
+          iconSize:[26,30],
+          iconAnchor:[13,15]
         });
+        const marker=L.marker([lt,ln],{icon});
         const popup=document.createElement("div");
         const title=document.createElement("strong");
         title.textContent=c.type||"Incident";
@@ -695,21 +712,30 @@ async function findRoute(){
 }
 
 // ── DRAW ROUTES ON MAP ──
-// Route 0 = shortest (blue), Route 1 = safest (green), rest = red dashed
+// Route roles come from the API so color and label match the actual scores.
 const ROUTE_STYLES=[
   {color:"#1a73e8",weight:7,opacity:.92,dashArray:null,label:"Fastest",badge:"FASTEST",icon:"⚡",bg:"#e8f0fe",barColor:"#1a73e8"},
-  {color:"#34a853",weight:7,opacity:.92,dashArray:null,label:"Safest",  badge:"SAFEST",  icon:"🛡️",bg:"#e6f4ea",barColor:"#34a853"},
-  {color:"#ea4335",weight:5,opacity:.70,dashArray:"10 6",label:"Alt",   badge:"ALTERNATIVE",icon:"⚠️",bg:"#fce8e6",barColor:"#ea4335"},
+  {color:"#34a853",weight:7,opacity:.92,dashArray:null,label:"Safest",badge:"SAFEST",icon:"🛡️",bg:"#e6f4ea",barColor:"#34a853"},
+  {color:"#168a43",weight:7,opacity:.92,dashArray:null,label:"Fastest & Safest",badge:"BEST OVERALL",icon:"🛡️",bg:"#e6f4ea",barColor:"#168a43"},
+  {color:"#ea4335",weight:5,opacity:.78,dashArray:"10 6",label:"Alternative",badge:"ALTERNATIVE",icon:"↗️",bg:"#fce8e6",barColor:"#ea4335"},
 ];
+
+function styleForRoute(route,index){
+  if(route.route_type==="fastest") return ROUTE_STYLES[0];
+  if(route.route_type==="safest") return ROUTE_STYLES[1];
+  if(route.route_type==="fastest_safest") return ROUTE_STYLES[2];
+  if(route.route_type==="alternative") return ROUTE_STYLES[3];
+  return ROUTE_STYLES[index]||ROUTE_STYLES[2];
+}
 
 function drawRoutes(routes){
   routes.forEach((route,i)=>{
-    const st=ROUTE_STYLES[i]||{color:"#9aa0a6",weight:4,opacity:.6,dashArray:"8 5",label:"Route",badge:"ROUTE",icon:"🔵",bg:"#f5f5f5",barColor:"#9aa0a6"};
+    const st=styleForRoute(route,i);
     const coords=parseCoords(route.geometry);
     if(!coords.length) return;
 
     const line=L.polyline(coords,{
-      color:st.color,weight:st.weight,opacity:i===0?st.opacity:.55,
+      color:st.color,weight:st.weight,opacity:st.opacity,
       dashArray:st.dashArray,lineCap:"round",lineJoin:"round",
     }).addTo(map);
 
@@ -747,7 +773,7 @@ function renderRouteCards(routes){
   document.getElementById("routeCount").textContent=routes.length;
 
   routes.forEach((route,i)=>{
-    const st=ROUTE_STYLES[i]||ROUTE_STYLES[2];
+    const st=styleForRoute(route,i);
     const dist=(route.distance/1000).toFixed(1);
     const mins=Math.round(route.duration/60);
     const score=parseFloat(route.crime_score||0);

@@ -53,6 +53,29 @@ function scoreRoute(route, incidents) {
   };
 }
 
+export function selectFastestAndSafestRoutes(routes) {
+  const fastest = [...routes].sort((a, b) => a.duration - b.duration)[0];
+  const riskRanked = [...routes].sort((a, b) =>
+    a.crime_score - b.crime_score || a.duration - b.duration
+  );
+  const safest = riskRanked[0];
+
+  if (fastest === safest) {
+    const alternative = riskRanked.find(route => route !== fastest);
+    if (!alternative) return [{ ...fastest, route_type: "fastest_safest" }];
+
+    return [
+      { ...fastest, route_type: "fastest_safest" },
+      { ...alternative, route_type: "alternative" }
+    ];
+  }
+
+  return [
+    { ...fastest, route_type: "fastest" },
+    { ...safest, route_type: "safest" }
+  ];
+}
+
 router.get("/route", async (req, res) => {
   try {
     const { startLat, startLon, endLat, endLon } = req.query;
@@ -111,11 +134,7 @@ router.get("/route", async (req, res) => {
       ...scoreRoute(route, incidents)
     }));
 
-    const fastest = [...scoredRoutes].sort((a, b) => a.duration - b.duration)[0];
-    const safest = [...scoredRoutes].sort((a, b) =>
-      a.crime_score - b.crime_score || a.duration - b.duration
-    ).find(route => route !== fastest);
-    const routes = safest ? [fastest, safest] : [fastest];
+    const routes = selectFastestAndSafestRoutes(scoredRoutes);
 
     res.json({ routes });
 
