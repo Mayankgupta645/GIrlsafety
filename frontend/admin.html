@@ -2,6 +2,7 @@
 <html>
 <head>
   <title>SOS Dashboard</title>
+  <meta name="saferoute-api-url" content=""/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 </head>
 <body>
@@ -10,11 +11,13 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+  const configuredApiBase = document.querySelector('meta[name="saferoute-api-url"]')?.content.trim();
+  const API_BASE = (configuredApiBase || `${location.protocol === "file:" ? "http:" : location.protocol}//${location.hostname || "localhost"}:5000/api`).replace(/\/+$/, "");
   const map = L.map("map").setView([13.03, 80.23], 13);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
   async function loadSOS() {
-    const res = await fetch("http://localhost:5000/api/sos");
+    const res = await fetch(`${API_BASE}/sos`);
     const data = await res.json();
 
     data.forEach(s => {

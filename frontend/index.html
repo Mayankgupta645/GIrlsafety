@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="saferoute-api-url" content=""/>
 <title>SafeRoute</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -142,6 +143,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;o
 .risk-safe  {background:#e6f4ea;color:#1e8e3e}
 .risk-medium{background:#fef7e0;color:#b45309}
 .risk-high  {background:#fce8e6;color:#c62828}
+.live-panel{
+  margin-top:8px;padding:10px 12px;border:1px solid #e8eaed;
+  border-radius:10px;background:#fff;color:#5f6368;font-size:12px;
+}
+.live-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0}
+.live-row strong{color:#202124;text-align:right}
+#liveUpdated{display:block;margin-top:5px;font-size:10px;color:#80868b}
+.demo-notice{
+  margin-top:7px;padding:8px 10px;border-radius:8px;
+  background:#fff4e5;color:#8a4b08;font-size:11px;line-height:1.4;
+}
+body.dark .demo-notice{background:#45351f;color:#ffd18a}
+.theme-toggle{
+  border:1px solid #e8eaed;border-radius:9px;padding:7px 9px;
+  background:#fff;color:#202124;font:inherit;font-size:12px;cursor:pointer;
+}
+body.dark{background:#171a21;color:#e8eaed}
+body.dark #sidebar,body.dark .sb-head,body.dark .live-panel,body.dark .route-card,
+body.dark .ac-drop,body.dark #obCard{background:#20242c;color:#e8eaed;border-color:#343a46}
+body.dark .sb-head{border-bottom-color:#343a46}
+body.dark .sb-logo h1,body.dark .ac-main,body.dark .live-row strong,
+body.dark .rc-name,body.dark .ob-title{color:#e8eaed}
+body.dark .search-field{background:#2b303a;border-color:#414754}
+body.dark .search-field input{color:#e8eaed}
+body.dark .search-field input::placeholder,body.dark .ac-sub{color:#aab1bd}
+body.dark .ac-item{border-bottom-color:#343a46}
+body.dark .ac-item:hover{background:#2b303a}
+body.dark .ac-ico,body.dark .live-panel{background:#292e38}
+body.dark .live-panel{border-color:#414754}
+body.dark .live-row{color:#bbc2ce}
+body.dark .theme-toggle{background:#2b303a;color:#e8eaed;border-color:#414754}
+body.dark .btn-outline{background:#292e38;color:#e8eaed;border-color:#414754}
+body.dark .rc-meta,body.dark .ob-text{color:#bbc2ce}
+body.dark .rc-chips .chip{filter:brightness(.82)}
+body.dark #obTitle{color:#e8eaed}
+body.dark #obText{color:#bbc2ce}
+body.dark .ob-secondary{background:#292e38}
+body.dark .leaflet-tile-pane{
+  filter:invert(100%) hue-rotate(180deg) brightness(88%) contrast(88%);
+}
+.locate-control button{
+  width:40px;height:40px;border:0;border-radius:4px;background:#fff;
+  color:#202124;box-shadow:0 1px 5px rgba(0,0,0,.45);
+  font-size:20px;cursor:pointer;
+}
+.locate-control button:hover{background:#f4f4f4}
+body.dark .locate-control button{background:#292e38;color:#e8eaed}
+body.dark .locate-control button:hover{background:#383f4b}
 
 /* ── voice status ── */
 #voiceStatus{
@@ -312,7 +361,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;o
         <h1>SafeRoute</h1>
         <span>Safety-first navigation</span>
       </div>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch color theme" onclick="toggleTheme()">🌙 Dark</button>
     </div>
+
+    <div class="live-panel" aria-live="polite">
+      <div class="live-row"><span>Local time</span><strong id="currentTime">--:--:--</strong></div>
+      <div class="live-row"><span>Crime reports (1 km)</span><strong id="liveCrimeScore">Waiting for GPS</strong></div>
+      <div class="live-row"><span>Area risk</span><strong id="liveRisk">Waiting for GPS</strong></div>
+      <small id="liveUpdated">Live reports from the last 30 days</small>
+    </div>
+    <!-- <div class="demo-notice" id="demoNotice">Map includes sample points for preview; these are not verified reports.</div> -->
 
     <!-- Origin / Dest with connector -->
     <div class="od-wrap">
@@ -414,41 +472,140 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;o
 <div id="spotlight"></div>
 
 <script>
+const configuredApiBase=document.querySelector('meta[name="saferoute-api-url"]')?.content.trim();
+const API_BASE=(configuredApiBase||`${location.protocol==="file:"?"http:":location.protocol}//${location.hostname||"localhost"}:5000/api`).replace(/\/+$/,"");
+
 // ══════════════════════════════════════════════
 // MAP SETUP
 // ══════════════════════════════════════════════
 const map = L.map("map",{zoomControl:false}).setView([17.385,78.487],13);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
-  attribution:"© OpenStreetMap"
-}).addTo(map);
+let tileLayer;
 L.control.zoom({position:"bottomright"}).addTo(map);
 
 let userLatLng=null, userMarker=null;
+let selectedDestination=null;
 let routeLayers=[], availableRoutes=[], selectedRouteIdx=-1;
 let navActive=false, navStepIdx=0;
 let sosActive=false, audioCtx=null, sosOscs=[];
+let lastRiskFetch=0;
+
+function updateUserPosition(lat,lon){
+  userLatLng={lat,lon};
+  if(Date.now()-lastRiskFetch>=30000)refreshLiveRisk();
+  const ll=[lat,lon];
+  if(!userMarker){
+    const icon=L.divIcon({html:`<div style="width:16px;height:16px;background:#1a73e8;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>`,iconSize:[16,16],iconAnchor:[8,8]});
+    userMarker=L.marker(ll,{icon}).addTo(map).bindPopup("📍 You are here");
+  }else{
+    userMarker.setLatLng(ll);
+  }
+  document.getElementById("from").value="📍 My Location";
+}
+
+const locateControl=L.control({position:"bottomright"});
+locateControl.onAdd=()=>{
+  const container=L.DomUtil.create("div","leaflet-bar locate-control");
+  const button=L.DomUtil.create("button","",container);
+  button.type="button";
+  button.textContent="◎";
+  button.title="Go to my current location";
+  button.setAttribute("aria-label","Go to my current location");
+  L.DomEvent.disableClickPropagation(container);
+  L.DomEvent.on(button,"click",()=>{
+    if(!navigator.geolocation){
+      alert("Location is not supported by this browser.");
+      return;
+    }
+    if(userLatLng){
+      map.flyTo([userLatLng.lat,userLatLng.lon],16);
+      userMarker?.openPopup();
+      return;
+    }
+    button.disabled=true;
+    navigator.geolocation.getCurrentPosition(position=>{
+      button.disabled=false;
+      const {latitude,longitude}=position.coords;
+      updateUserPosition(latitude,longitude);
+      map.flyTo([latitude,longitude],16);
+      userMarker?.openPopup();
+    },error=>{
+      button.disabled=false;
+      alert(`Could not get your location: ${error.message}`);
+    },{enableHighAccuracy:true,timeout:15000});
+  });
+  return container;
+};
+locateControl.addTo(map);
+
+function applyTheme(theme){
+  const dark=theme==="dark";
+  document.body.classList.toggle("dark",dark);
+  document.getElementById("themeToggle").textContent=dark?"☀️ Light":"🌙 Dark";
+  try{localStorage.setItem("safeRouteTheme",dark?"dark":"light");}catch{}
+  if(!tileLayer){
+    tileLayer=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      attribution:"© OpenStreetMap"
+    }).addTo(map);
+  }
+}
+function toggleTheme(){
+  applyTheme(document.body.classList.contains("dark")?"light":"dark");
+}
+let savedTheme="light";
+try{savedTheme=localStorage.getItem("safeRouteTheme")||"light";}catch{}
+applyTheme(savedTheme);
+
+function updateClock(){
+  document.getElementById("currentTime").textContent=new Date().toLocaleTimeString([],{
+    hour:"2-digit",minute:"2-digit",second:"2-digit"
+  });
+}
+updateClock();
+setInterval(updateClock,1000);
+
+async function refreshLiveRisk(){
+  if(!userLatLng) return;
+  lastRiskFetch=Date.now();
+  const crime=document.getElementById("liveCrimeScore");
+  const risk=document.getElementById("liveRisk");
+  const updated=document.getElementById("liveUpdated");
+  try{
+    const response=await fetch(`${API_BASE}/crimes/score?lat=${userLatLng.lat}&lon=${userLatLng.lon}`);
+    const data=await response.json();
+    if(!response.ok) throw new Error(data.error||"Risk data unavailable");
+    crime.textContent=`${data.count} · score ${Number(data.crime_score).toFixed(1)}/10`;
+    risk.textContent=data.count===0?"No recent reports":
+      data.crime_score<3?"Low":data.crime_score<6?"Moderate":"High";
+    risk.style.color=data.count===0?"":data.crime_score<3?"#1e8e3e":data.crime_score<6?"#b45309":"#c62828";
+    updated.textContent=`Within 1 km · last 30 days${data.demo_count?` · includes ${data.demo_count} sample points`:""} · updated ${new Date().toLocaleTimeString()}`;
+  }catch{
+    crime.textContent="Unavailable";
+    risk.textContent="Unavailable";
+    updated.textContent="Could not load nearby crime data";
+  }
+}
+setInterval(()=>{if(Date.now()-lastRiskFetch>=30000)refreshLiveRisk();},5000);
 
 // ── GPS ──
 if(navigator.geolocation){
   navigator.geolocation.watchPosition(p=>{
     const {latitude:lat,longitude:lon}=p.coords;
-    userLatLng={lat,lon};
-    const ll=[lat,lon];
-    if(!userMarker){
-      const icon=L.divIcon({html:`<div style="width:16px;height:16px;background:#1a73e8;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>`,iconSize:[16,16],iconAnchor:[8,8]});
-      userMarker=L.marker(ll,{icon}).addTo(map).bindPopup("📍 You are here");
-      map.setView(ll,15);
-    } else {
-      userMarker.setLatLng(ll);
+    const isFirstPosition=!userMarker;
+    updateUserPosition(lat,lon);
+    if(isFirstPosition){
+      map.setView([lat,lon],15);
     }
-    document.getElementById("from").value="📍 My Location";
-  },e=>console.log(e.message),{enableHighAccuracy:true});
+  },e=>{
+    console.log(e.message);
+    document.getElementById("liveCrimeScore").textContent="Location unavailable";
+    document.getElementById("liveRisk").textContent="Location unavailable";
+  },{enableHighAccuracy:true});
 }
 
 // ── BACKGROUND LAYERS ──
 async function loadRoads(){
   try{
-    const g=await(await fetch("http://localhost:5000/api/geojson/roads")).json();
+    const g=await(await fetch(`${API_BASE}/geojson/roads`)).json();
     L.geoJSON(g,{style:f=>{
       const r=f.properties.risk_score||0;
       return{color:r<=3?"#1a73e8":r<=6?"#fbbc04":"#ea4335",weight:r>6?5:3,opacity:.75};
@@ -457,19 +614,48 @@ async function loadRoads(){
 }
 async function loadCrimes(){
   try{
-    const data=await(await fetch("http://localhost:5000/api/crimes")).json();
+    const response=await fetch(`${API_BASE}/crimes`);
+    if(!response.ok) throw new Error(`Crime API returned HTTP ${response.status}`);
+    const data=await response.json();
     const pts=[];
+    const markers=[];
     data.forEach(c=>{
       try{
         const g=JSON.parse(c.geom);
         const [ln,lt]=g.coordinates;
         pts.push([lt,ln,.9]);
-        L.circleMarker([lt,ln],{radius:5,fillColor:"#ea4335",color:"#ea4335",fillOpacity:.7,weight:0}).addTo(map)
-          .bindTooltip(`⚠️ ${c.type||"Incident"}`);
+        const marker=L.circleMarker([lt,ln],{
+          radius:4,fillColor:"#e53935",color:"#b71c1c",fillOpacity:.9,weight:1
+        });
+        const popup=document.createElement("div");
+        const title=document.createElement("strong");
+        title.textContent=c.type||"Incident";
+        const status=document.createElement("div");
+        status.textContent=c.source==="demo"
+          ?"Sample map point — not a verified report"
+          :"Reported incident";
+        const reportedAt=document.createElement("div");
+        const date=new Date(c.created_at);
+        reportedAt.textContent=Number.isNaN(date.getTime())?"":`Reported: ${date.toLocaleString()}`;
+        popup.append(title,status,reportedAt);
+        marker.bindPopup(popup);
+        markers.push(marker);
       }catch{}
     });
-    if(pts.length) L.heatLayer(pts,{radius:32,blur:22,gradient:{0:"#fbbc04",.5:"#ea4335",1:"#b71c1c"}}).addTo(map);
-  }catch{}
+    markers.forEach(marker=>marker.addTo(map));
+    if(pts.length&&typeof L.heatLayer==="function"){
+      L.heatLayer(pts,{radius:32,blur:22,gradient:{0:"#fbbc04",.5:"#ea4335",1:"#b71c1c"}}).addTo(map);
+    }
+    const notice=document.getElementById("demoNotice");
+    if(notice){
+      const demoCount=data.filter(c=>c.source==="demo").length;
+      notice.textContent=`Map includes ${demoCount} sample points across Agra; they are not verified reports.`;
+    }
+  }catch(e){
+    const notice=document.getElementById("demoNotice");
+    if(notice) notice.textContent=`Map points could not be loaded: ${e.message}`;
+    console.error("Could not load crime map points:",e.message);
+  }
 }
 loadRoads(); loadCrimes();
 
@@ -486,11 +672,13 @@ async function findRoute(){
 
   try{
     // geocode destination
-    const geo=await(await fetch(`http://localhost:5000/api/geo/geocode?q=${encodeURIComponent(to)}`)).json();
-    if(!geo.lat){alert("Location not found");showLoading(false);return;}
+    const geo=selectedDestination?.query===to
+      ?selectedDestination
+      :await(await fetch(`${API_BASE}/geo/geocode?q=${encodeURIComponent(to)}`)).json();
+    if(geo.lat==null||geo.lon==null){alert(geo.error||"Location not found");showLoading(false);return;}
 
     const data=await(await fetch(
-      `http://localhost:5000/api/routes/route?startLat=${userLatLng.lat}&startLon=${userLatLng.lon}&endLat=${geo.lat}&endLon=${geo.lon}`
+      `${API_BASE}/routes/route?startLat=${userLatLng.lat}&startLon=${userLatLng.lon}&endLat=${geo.lat}&endLon=${geo.lon}`
     )).json();
 
     showLoading(false);
@@ -509,9 +697,9 @@ async function findRoute(){
 // ── DRAW ROUTES ON MAP ──
 // Route 0 = shortest (blue), Route 1 = safest (green), rest = red dashed
 const ROUTE_STYLES=[
-  {color:"#1a73e8",weight:7,opacity:.92,dashArray:null,label:"Shortest",badge:"SHORTEST",icon:"⚡",bg:"#e8f0fe",barColor:"#1a73e8"},
+  {color:"#1a73e8",weight:7,opacity:.92,dashArray:null,label:"Fastest",badge:"FASTEST",icon:"⚡",bg:"#e8f0fe",barColor:"#1a73e8"},
   {color:"#34a853",weight:7,opacity:.92,dashArray:null,label:"Safest",  badge:"SAFEST",  icon:"🛡️",bg:"#e6f4ea",barColor:"#34a853"},
-  {color:"#ea4335",weight:5,opacity:.70,dashArray:"10 6",label:"Alt",   badge:"HIGH RISK",icon:"⚠️",bg:"#fce8e6",barColor:"#ea4335"},
+  {color:"#ea4335",weight:5,opacity:.70,dashArray:"10 6",label:"Alt",   badge:"ALTERNATIVE",icon:"⚠️",bg:"#fce8e6",barColor:"#ea4335"},
 ];
 
 function drawRoutes(routes){
@@ -749,12 +937,15 @@ async function triggerSOS(source){
   sosActive=true; startSOSAlarm();
   btn.innerHTML="🔇 STOP SOS"; btn.style.background="#b71c1c";
   try{
-    const payload={phone:"+919997114166",source};
+    const payload={source};
     if(userMarker){const ll=userMarker.getLatLng();payload.lat=ll.lat;payload.lon=ll.lng;}
-    const r=await fetch("http://localhost:5000/api/sos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-    if(r.ok) alert("🚨 Emergency services alerted! Help is on the way.");
-    else     alert("⚠️ SOS alarm active — network error sending alert");
-  }catch{ alert("⚠️ SOS alarm active — check your connection"); }
+    const r=await fetch(`${API_BASE}/sos`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const result=await r.json();
+    if(!r.ok) throw new Error(result.error||"SOS request failed");
+    alert(result.mode==="demo"
+      ?"🧪 Demo SOS call simulated — no phone call was placed. The alarm is active."
+      :"🚨 SOS call placed. The alarm is active.");
+  }catch(e){ alert(`⚠️ SOS alarm active — ${e.message||"check your connection"}`); }
 }
 function sendSOS(){triggerSOS("Manual");}
 
@@ -767,8 +958,8 @@ async function reportIncident(){
   if(!userMarker){alert("GPS not available");return;}
   const{lat,lng}=userMarker.getLatLng();
   try{
-    await fetch("http://localhost:5000/api/crimes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type,lat,lon:lng})});
-    alert("✅ Incident reported — map updated"); loadCrimes();
+    await fetch(`${API_BASE}/crimes`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type,lat,lon:lng})});
+    alert("✅ Incident reported — map updated"); loadCrimes(); refreshLiveRisk();
   }catch{alert("Error reporting incident");}
 }
 
@@ -787,12 +978,14 @@ async function reportIncident(){
 
   inp.addEventListener("input",()=>{
     const q=inp.value.trim();
+    selectedDestination=null;
     clr.classList.toggle("on",q.length>0);
     clearTimeout(db);
     if(q.length<3){close();return;}
     db=setTimeout(async()=>{
       try{
-        const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`,{headers:{"Accept-Language":"en"}});
+        const res=await fetch(`${API_BASE}/geo/search?q=${encodeURIComponent(q)}`);
+        if(!res.ok) throw new Error(`Place search failed (HTTP ${res.status})`);
         const data=await res.json();
         drop.innerHTML="";
         if(!data.length){drop.innerHTML=`<div class="ac-none">No results for "${esc(q)}"</div>`;drop.classList.add("open");return;}
@@ -801,14 +994,16 @@ async function reportIncident(){
           const el=document.createElement("div");
           el.className="ac-item";
           el.innerHTML=`
-            <div class="ac-ico">${pinFor(item.type||item.class)}</div>
+            <div class="ac-ico">${pinFor(item.type)}</div>
             <div class="ac-txt">
-              <div class="ac-main">${esc(parts[0])}</div>
-              <div class="ac-sub">${esc(parts.slice(1,4).join(", "))}</div>
+              <div class="ac-main">${esc(parts.slice(0,2).join(", "))}</div>
+              <div class="ac-sub">${esc(parts.slice(2).join(", "))}</div>
             </div>`;
           el.addEventListener("click",()=>{
-            inp.value=item.display_name; clr.classList.add("on"); close();
-            map.flyTo([parseFloat(item.lat),parseFloat(item.lon)],15,{animate:true,duration:1});
+            inp.value=item.display_name;
+            selectedDestination={...item,query:inp.value};
+            clr.classList.add("on"); close();
+            map.flyTo([item.lat,item.lon],16,{animate:true,duration:1});
           });
           drop.appendChild(el);
         });
@@ -821,7 +1016,7 @@ async function reportIncident(){
     if(e.key==="Escape"){close();inp.blur();}
     if(e.key==="Enter") findRoute();
   });
-  clr.addEventListener("click",()=>{inp.value="";clr.classList.remove("on");close();inp.focus();});
+  clr.addEventListener("click",()=>{inp.value="";selectedDestination=null;clr.classList.remove("on");close();inp.focus();});
   document.addEventListener("click",e=>{
     if(!document.getElementById("toBox").contains(e.target)&&!drop.contains(e.target)) close();
   });
